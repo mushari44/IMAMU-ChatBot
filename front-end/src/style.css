@@ -1,107 +1,227 @@
+:root {
+  --primary: #00ff88;
+  --secondary: #60a5fa;
+  --background: #0a0a0a;
+  --surface: #1a1a1a;
+  --border: rgba(255,255,255,0.1);
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+}
+
 .container {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
-  font-family: 'Noto Naskh Arabic', 'Amiri', Arial, sans-serif;
-  direction: rtl;
+  padding: 2rem;
+  min-height: 100vh;
+  background: var(--background);
+  font-family: 'Inter', 'Noto Naskh Arabic', sans-serif;
+  color: var(--text-primary);
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 3rem;
+  position: relative;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  background: linear-gradient(45deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 1.5rem;
+  font-weight: 700;
+}
+
+.upload-section {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-section::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(0,255,136,0.1), transparent);
+  animation: gradientRotate 6s linear infinite;
+}
+
+
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 3rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  position: relative;
+  background: rgba(0,0,0,0.3);
+}
+
+.dropzone.active {
+  border-color: var(--primary);
+  background: rgba(0,255,136,0.05);
+}
+
+.dropzone-content p {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+}
+
+.file-preview {
+  background: var(--surface);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.upload-btn {
+  background:  var(--primary);
+  border: none;
+  padding: 0.8rem 2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 1.5rem;
+  transition: transform 0.2s ease;
+}
+
+.upload-btn:hover {
+  transform: translateY(-2px);
+}
+
+.chat-section {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
 }
 
 .chat-history {
-  height: 400px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  padding: 20px;
-  margin-bottom: 20px;
+  height: 500px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
   overflow-y: auto;
-  background-color: #f8f9fa;
 }
 
 .message {
-  margin-bottom: 15px;
-  padding: 15px;
-  border-radius: 8px;
-  direction: rtl;
-  text-align: right;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  transition: transform 0.2s ease;
+}
+
+.message:hover {
+  transform: translateX(5px);
 }
 
 .message.question {
-  background-color: #e3f2fd;
-  margin-left: 20%;
-  border: 1px solid #bbdefb;
+  background: linear-gradient(45deg, rgba(0,255,136,0.1), transparent);
+  border-color: rgba(0,255,136,0.3);
+  margin-left: 15%;
 }
 
 .message.answer {
-  background-color: #fff;
-  margin-right: 20%;
-  border: 1px solid #eee;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  background: linear-gradient(45deg, rgba(96,165,250,0.1), transparent);
+  border-color: rgba(96,165,250,0.3);
+  margin-right: 15%;
 }
 
 .answer-content {
   white-space: pre-line;
-  line-height: 1.8;
-  font-size: 16px;
+  line-height: 1.7;
+  font-size: 1.1rem;
 }
 
 .sources {
-  margin-top: 15px;
-  padding-top: 10px;
-  border-top: 1px dashed #ddd;
-}
-
-.sources-title {
-  font-weight: bold;
-  color: #666;
-  margin-bottom: 8px;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
 }
 
 .source-item {
+  display: inline-flex;
+  background: rgba(255,255,255,0.05);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  margin: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.question-input {
   display: flex;
-  gap: 10px;
-  margin-bottom: 5px;
-  font-size: 14px;
-  color: #666;
+  gap: 1rem;
+  background: var(--surface);
+  padding: 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
 }
 
-.source-file {
-  font-weight: 500;
-  color: #2c7be5;
+.question-input input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
-.source-chunk {
-  color: #666;
-}
-
-.error-message {
-  color: #dc3545;
-  background-color: #f8d7da;
-  padding: 10px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.message-time {
-  font-size: 12px;
-  color: #666;
-  margin-top: 8px;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.question-input input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0,255,136,0.1);
 }
 
 .spin {
   animation: spin 1s linear infinite;
 }
 
-.question-input input {
-  font-family: 'Noto Naskh Arabic', 'Amiri', Arial, sans-serif;
-  font-size: 16px;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  direction: rtl;
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.document-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.document-tag {
+  background: rgba(0,255,136,0.1);
+  color: var(--primary);
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  border: 1px solid rgba(0,255,136,0.3);
+}
+
+.reset-btn {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+}
+
+.reset-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
 }

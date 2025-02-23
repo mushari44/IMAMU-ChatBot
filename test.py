@@ -179,7 +179,7 @@ class ArabicTextProcessor:
     @staticmethod
     def normalize_text(text: str) -> str:
         allowed_punctuation = r'\.\?\!\،\؛\:\-\–\—\(\)\[\]'
-        text = re.sub(fr'[^\w\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\s{allowed_pulenctuation}]', '', text)
+        text = re.sub(fr'[^\w\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\s{allowed_punctuation}]', '', text)
         text = re.sub(r'\n+', '\n', text)
         text = re.sub(r'[ \t]+', ' ', text)
         return text.strip()

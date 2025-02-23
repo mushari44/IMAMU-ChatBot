@@ -49,7 +49,7 @@ function TxtQAInterface() {
       });
 
       setUploadStatus({ type: 'success', message: response.data.message });
-      setUploadedDocuments(prev => [...new Set([...prev, file.name])]); // Prevent duplicates
+      setUploadedDocuments(prev => [...new Set([...prev, file.name])]);
       
     } catch (error) {
       let message = 'Error processing document';
@@ -119,7 +119,7 @@ function TxtQAInterface() {
   return (
     <div className="container">
       <header className="header">
-        <h1>Arabic Document Analyzer</h1>
+        <h1>IMAMU RAG CHATBOT</h1>
         <div className="documents-info">
           <div className="document-count">
             <span>Loaded Documents: {uploadedDocuments.length}</span>
