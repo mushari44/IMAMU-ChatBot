@@ -7,15 +7,18 @@
   --text-primary: #f3f4f6;
   --text-secondary: #9ca3af;
 }
+body{
+  margin: 0px;
 
+}
 .container {
-  max-width: 1200px;
+  max-width: screen;
   margin: 0 auto;
   padding: 2rem;
   min-height: 100vh;
   background: var(--background);
   font-family: 'Inter', 'Noto Naskh Arabic', sans-serif;
-  color: var(--text-primary);
+  /* color: var(--text-primary); */
 }
 
 .header {
@@ -44,16 +47,6 @@
   overflow: hidden;
 }
 
-.upload-section::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(45deg, transparent, rgba(0,255,136,0.1), transparent);
-  animation: gradientRotate 6s linear infinite;
-}
 
 
 .dropzone {
@@ -224,4 +217,105 @@
 .reset-btn:hover {
   color: var(--primary);
   border-color: var(--primary);
+}
+/* .container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: 'Segoe UI', 'Tahoma', sans-serif;
+} */
+
+.answer-bubble {
+  /* background: #f8fafc; */
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  direction: rtl;
+  text-align: right;
+  color: white;
+}
+
+.answer-content {
+  line-height: 1.8;
+  font-size: 1.1rem;
+  font-family: 'Amiri', 'Noto Sans Arabic', sans-serif;
+  white-space: pre-wrap;
+}
+
+.answer-list {
+  list-style: arabic-indic;
+  padding-right: 2rem;
+  margin: 1rem 0;
+}
+
+.answer-list li {
+  margin-bottom: 1rem;
+  padding-right: 1rem;
+}
+
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+  padding: 1rem;
+  background: #f0f4f8;
+  border-radius: 8px;
+}
+body {
+  margin: 0;
+  background: #f7fafc;
+  color: #2d3748;
+}
+
+button {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.source-item {
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.source-icon {
+  color: #2b6cb0;
+  font-size: 1.2rem;
+}
+
+.reference {
+  color: #2b6cb0;
+  font-size: 0.9em;
+  vertical-align: super;
+  margin: 0 2px;
+}
+
+.message-time {
+  color: #718096;
+  font-size: 0.85rem;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-message {
+  animation: fadeIn 0.3s ease-out;
 }

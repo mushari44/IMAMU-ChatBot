@@ -21,8 +21,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import StrOutputParser
 from concurrent.futures import ThreadPoolExecutor
 import torch.nn.functional as F
+from pypdf import PdfReader
+from io import BytesIO
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,8 @@ app = FastAPI()
 
 class Config:
     EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large"
-    CHUNK_SIZE = 10000
-    CHUNK_OVERLAP = 150 
+    CHUNK_SIZE = 1200
+    CHUNK_OVERLAP = 120 
     SIMILARITY_THRESHOLD = 0.68
     MAX_FILE_SIZE_MB = 10
     INDEX_PATH = "faiss_index.bin"
@@ -221,46 +222,64 @@ app.add_middleware(
 class QuestionRequest(BaseModel):
     question: str
 
+def extract_text_from_pdf(content: bytes) -> str:
+    try:
+        pdf_reader = PdfReader(BytesIO(content))
+        extracted_text = []
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                extracted_text.append(page_text)
+        combined_text = "\n".join(extracted_text)
+        return ArabicTextProcessor.process_file(combined_text.encode('utf-8'))
+    except Exception as e:
+        logger.error(f"Failed to extract PDF text: {str(e)}")
+        raise HTTPException(400, "Could not parse PDF content") from e
+
 @app.post("/upload", status_code=201)
 async def upload_file(file: UploadFile = File(...)):
-    allowed_types = ["text/plain", "application/octet-stream", "text/plain; charset=utf-8"]
+    allowed_types = [
+        "text/plain",
+        "application/octet-stream",
+        "text/plain; charset=utf-8",
+        "application/pdf"
+    ]
     
     if file.content_type not in allowed_types:
         logger.error(f"Invalid file type: {file.content_type}")
-        raise HTTPException(400, "Only TXT files are supported")
+        raise HTTPException(400, "Only TXT and PDF files are supported")
 
     try:
         content = await file.read()
         if not content:
             raise HTTPException(400, "Empty file uploaded")
-            
+
         if len(content) > Config.MAX_FILE_SIZE_MB * 1024 * 1024:
-            raise HTTPException(413, f"File size exceeds {Config.MAX_FILE_SIZE_MB}MB limit")
+            raise HTTPException(
+                413, 
+                f"File size exceeds {Config.MAX_FILE_SIZE_MB}MB limit"
+            )
 
-        try:
-            raw_text = ArabicTextProcessor.process_file(content)
-        except Exception as e:
-            logger.error(f"Text processing failed: {str(e)}")
-            raise HTTPException(400, "File processing error - invalid format or encoding") from e
+        if file.content_type == "application/pdf":
+            text = extract_text_from_pdf(content)
+        else:
+            text = ArabicTextProcessor.process_file(content)
 
-        if len(raw_text.strip()) < 50:
-            raise HTTPException(422, "File content is too short (min 50 characters required)")
+        if len(text.strip()) < 50:
+            raise HTTPException(
+                422, 
+                "File content is too short (min 50 characters required)"
+            )
 
-        try:
-            chunks = ArabicTextProcessor.chunk_text(raw_text)
-            vector_store.add_document(chunks, file.filename)
-        except Exception as e:
-            logger.error(f"Indexing failed: {str(e)}")
-            raise HTTPException(500, "Document indexing failed") from e
-
+        chunks = ArabicTextProcessor.chunk_text(text)
+        vector_store.add_document(chunks, file.filename)
         return {"message": f"Successfully processed {len(chunks)} chunks"}
 
-    except HTTPException as he:
+    except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Upload failed: {str(e)}", exc_info=True)
         raise HTTPException(500, "File upload processing failed") from e
-
 @app.post("/ask")
 async def ask_question(request: QuestionRequest):
     try:
@@ -281,22 +300,55 @@ async def ask_question(request: QuestionRequest):
         ])
 
         prompt = PromptTemplate(
-            template="""أنت مساعد خبير في الوثائق العربية. أجب بناءً على السياق:
+            template="""
+            # الدور: 
+            مساعد أكاديمي متخصص في الوثائق الجامعية. يجب الإجابة بناءً على السياق المرفق فقط.
+
+            ## السياق:
+            {context}
+
+            ## السؤال: 
+            {question}
+
+            ## التعليمات:
+            1. الإجابة باللغة العربية الفصحى مع استخدام علامات الترقيم المناسبة
+            2. تنظيم الإجابة في نقاط مرقمة (١، ٢، ٣) عند وجود معلومات متعددة
+            3. وضع المراجع مباشرة بعد كل معلومة بين أقواس مربعة: [رقم]
+            4. إضافة قسم "المصادر" في النهاية يحتوي على:
+            - أسماء الملفات
+            - أرقام المقاطع المستخدمة
+            5. إذا كانت المعلومات غير كافية:
+            - اذكر ذلك بوضوح في بداية الإجابة
+            - لا تخترع أي معلومات
+
+            ## تنسيق الإجابة المطلوب:
+            الإجابة:
+            ......
             
-السياق:
-{context}
+            المصادر:
+            [١] اسم الملف (المقطع X)
+            [٢] اسم الملف (المقطع Y)
 
-السؤال:
-{question}
+            ## أمثلة مقبولة:
+            الإجابة:
+            ١. الشرط الأساسي للتسجيل هو ...[١]
+            ٢. يجب تقديم الأوراق خلال ...[٢]
+            
+            المصادر:
+            [١] اللائحة_الأكاديمية.pdf (المقطع ٣)
+            [٢] دليل_الطالب.docx (المقطع ٥)
 
-التعليمات:
-1. أجب بلغة عربية فصحى
-2. أشر إلى المصدر (الملف ورقم المقطع)
-3. رتب الإجابة في نقاط واضحة
+            ## تحذيرات:
+            - ممنوع استخدام تنسيق Markdown
+            - تجنب العبارات العامة غير المحددة
+            - الحفاظ على التسلسل المنطقي في الإجابة
+            - التأكد من تطابق أرقام المراجع مع المصادر
 
-الإجابة:""",
+            الإجابة:
+            """,
             input_variables=["context", "question"]
         )
+
 
         chain = LLMChain(
             llm=services["llm"],
