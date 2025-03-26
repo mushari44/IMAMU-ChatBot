@@ -50,7 +50,8 @@ function TxtQAInterface() {
       setUploadedDocuments(prev => [...new Set([...prev, file.name])]);
       
     } catch (error) {
-      // Error handling remains same
+      console.log(error);
+      
     } finally {
       setIsLoading(prev => ({ ...prev, upload: false }));
       setFile(null);
@@ -77,15 +78,13 @@ function TxtQAInterface() {
       
       setQuestion('');
     } catch (error) {
-      // Error handling remains same
+      console.log(error);
     } finally {
       setIsLoading(prev => ({ ...prev, question: false }));
     }
   };
 
-  const handleReset = async () => {
-    // Reset logic remains same
-  };
+
 
   const formatAnswer = (content) => {
     const [answerPart, sourcesPart] = content.split(/\nالمصادر:/);
@@ -120,13 +119,7 @@ function TxtQAInterface() {
         <div className="documents-info">
           <div className="document-count">
             <span>Loaded Documents: {uploadedDocuments.length}</span>
-            <button 
-              onClick={handleReset}
-              className="reset-btn"
-              aria-label="Reset system"
-            >
-              <RotateCw size={16} /> Reset
-            </button>
+
           </div>
           {uploadedDocuments.length > 0 && (
             <div className="document-list">
@@ -181,7 +174,6 @@ function TxtQAInterface() {
         )}
       </section>
 
-      {/* Header and upload section remain same */}
 
       <section className="chat-section">
         <div className="chat-history">
@@ -233,7 +225,6 @@ function TxtQAInterface() {
                 </div>
               )}
 
-              {/* Error message remains same */}
             </div>
           ))}
         </div>
@@ -261,8 +252,6 @@ function TxtQAInterface() {
             )}
           </button>
         </div>
-
-        {/* Question input section remains same */}
       </section>
     </div>
   );
