@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+transformers
+torch
+faiss-cpu  
+langchain
+langchain-google-genai
+bidi
+arabic-reshaper
+pypdf
+numpy
+scikit-learn  
+aiofiles 

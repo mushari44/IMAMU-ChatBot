@@ -1,0 +1,9 @@
+To run the frontend 
+1: npm install 
+2: npm run
+
+for back-end 
+1: pip install -r requirements.txt
+2:python test.py
+
+
