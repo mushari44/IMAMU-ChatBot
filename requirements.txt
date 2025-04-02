@@ -7,7 +7,7 @@ torch
 faiss-cpu  
 langchain
 langchain-google-genai
-bidi
+python-bidi
 arabic-reshaper
 pypdf
 numpy
