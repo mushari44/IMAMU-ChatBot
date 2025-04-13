@@ -13,3 +13,4 @@ pypdf
 numpy
 scikit-learn  
 aiofiles 
+langchain-community
