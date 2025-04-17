@@ -87,13 +87,30 @@ def initialize_services():
 
     executor = ThreadPoolExecutor(max_workers=8)
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash-latest",
-        temperature=0.35,
-        google_api_key=Config.GEMINI_API_KEY,
-        max_output_tokens=3000,
-        convert_system_message_to_human=True
+
+    llm = ChatOllama(
+    base_url="http://localhost:12345",
+    model="command-r7b-custom:latest",
+    temperature=0.25,
+    streaming=True,
+    verbose=True,
+    timeout=180,
+    model_kwargs={
+        "n_ctx": 16384,     
+        "top_p": 0.9,
+        "top_k": 50,
+        "num_gpu": 1,
+        "num_threads": 8,
+        "stop": ["<|END_OF_TURN_TOKEN|>"]
+    },
     )
+    # llm = ChatGoogleGenerativeAI(
+    #     model="gemini-1.5-flash-latest",
+    #     temperature=0.35,
+    #     google_api_key=Config.GEMINI_API_KEY,
+    #     max_output_tokens=3000,
+    #     convert_system_message_to_human=True
+    # )
 
     return {
         "tokenizer": tokenizer,
@@ -288,7 +305,31 @@ async def ask_question(request: QuestionRequest):
 
         print("=" * 60)
         print(" السياق المُرسل إلى النموذج (Context Sent to LLM):")
-        print(context[:800] + "...\n" if len(context) > 800 else context)
+        print(context + "...\n")
+#         prompt = PromptTemplate(
+#     template="""
+#     <|START_OF_TURN_TOKEN|>
+#     <|SYSTEM_TOKEN|>
+#     أنت مساعد قانوني وأكاديمي متخصص في الوثائق الجامعية. قم بالإجابة باستخدام السياق المرفق فقط مع الالتزام الصارم بالتالي:
+    
+#     السياق:
+#     {context}
+    
+#     التعليمات:
+#     ١. استخدم لغة عربية فصحى واضحة
+#     ٢. أدرج المراجع بين [] بعد كل نقطة
+#     ٣. رتب الإجابة كقائمة مرقمة
+#     ٤. أضف قسم مصادر منفصل في النهاية
+#     ٥. لا تخترع معلومات خارج السياق
+    
+#     <|USER_TOKEN|>
+#     السؤال: {question}
+    
+#     <|ASSISTANT_TOKEN|>
+#     الإجابة:
+#     """,
+#     input_variables=["context", "question"]
+# )
         prompt = PromptTemplate(
         template="""
                 # الدور:

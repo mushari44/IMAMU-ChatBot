@@ -1,0 +1,10 @@
+FROM command-r7b-arabic:latest  
+PARAMETER num_gpu 32
+PARAMETER num_batch 512      
+PARAMETER temperature 0.2    
+PARAMETER top_p 0.95        
+PARAMETER top_k 100          
+PARAMETER repeat_penalty 1.1 
+PARAMETER stop "<|END_OF_TURN_TOKEN|>"  
+PARAMETER num_ctx 20000     
+PARAMETER seed 42          
