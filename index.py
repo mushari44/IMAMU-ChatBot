@@ -25,11 +25,7 @@ from pypdf import PdfReader
 from io import BytesIO
 import time
 from langchain_community.chat_models import ChatOllama
-from langchain.prompts.chat import (
-  ChatPromptTemplate,
-  SystemMessagePromptTemplate,
-  HumanMessagePromptTemplate
-)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -42,17 +38,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-def count_tokens(text: str) -> int:
-    """Return #tokens according to the *embedding* tokenizer (E5 512‑max)."""
-    return len(services["tokenizer"].encode(text, add_special_tokens=False))
 
 class Config:
     EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large"
-    HF_CHAT_MODEL = "CohereLabs/c4ai-command-r7b-arabic-02-2025"  # ⚠ choose any HF chat model
-
     CHUNK_SIZE = 1200
-    CHUNK_OVERLAP = 100
+    CHUNK_OVERLAP = 120 
     SIMILARITY_THRESHOLD = 0.50
+
     LANGSMITH_API_KEY: str = "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"
     os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -96,21 +88,29 @@ def initialize_services():
     executor = ThreadPoolExecutor(max_workers=8)
 
 
-    llm = ChatOllama(
-    base_url="http://localhost:11434",
-    model="command-r7b-custom:latest",
-    streaming=True,
-    verbose=True,
-    timeout=500,
-    temperature=0.2
-    )
-    # llm = ChatGoogleGenerativeAI(
-    #     model="gemini-1.5-flash-latest",
-    #     temperature=0.35,
-    #     google_api_key=Config.GEMINI_API_KEY,
-    #     max_output_tokens=3000,
-    #     convert_system_message_to_human=True
+    # llm = ChatOllama(
+    # base_url="http://localhost:12345",
+    # model="command-r7b-custom:latest",
+    # temperature=0.25,
+    # streaming=True,
+    # verbose=True,
+    # timeout=180,
+    # model_kwargs={
+    #     "n_ctx": 16384,     
+    #     "top_p": 0.9,
+    #     "top_k": 50,
+    #     "num_gpu": 1,
+    #     "num_threads": 8,
+    #     "stop": ["<|END_OF_TURN_TOKEN|>"]
+    # },
     # )
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash-latest",
+        temperature=0.35,
+        google_api_key=Config.GEMINI_API_KEY,
+        max_output_tokens=3000,
+        convert_system_message_to_human=True
+    )
 
     return {
         "tokenizer": tokenizer,
@@ -129,9 +129,8 @@ class ArabicTextProcessor:
         text = re.sub(r'[\u202D\u202C]', '', text)
         text = re.sub(r'[\u064B-\u065F]', '', text)
         text = re.sub(r'[!?؟<>.«»#,•:،؛·@&()\-\n]', ' ', text)
+        text = re.sub(r'[٠١٢٣٤٥٦٧٨٩]', lambda m: str(ord(m.group(0)) - ord('٠')), text)
         text = re.sub(r'[إأآ]', 'ا', text)
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'\n+', ' ', text)
         text = text.replace('ة', 'ه')
         text = re.sub(' +', ' ', text)
         return text.strip()
@@ -191,18 +190,9 @@ class VectorStore:
                 return
 
             display_chunks = [ArabicTextProcessor.process_file(chunk.encode('utf-8')) for chunk in chunks]
-            norm_chunks = [ArabicTextProcessor.normalize_text(c) for c in chunks]
-        # ---------------- count tokens for each chunk ----------------
-            token_counts = [count_tokens(c) for c in norm_chunks]
-            for i, tc in enumerate(token_counts):
-                print(f"{filename} | chunk {i+1}/{len(chunks)} | {tc} tokens")
-                if tc > 512:
-                    logger.warning(f"  >512 tokens: will be truncated by E5!")
-            # -------------------------------------------------------------
-
             embedding_chunks = [ArabicTextProcessor.normalize_text(chunk) for chunk in chunks]
             embeddings = list(services["executor"].map(self._generate_embedding, embedding_chunks))
-            # print("display chunk !! : ",display_chunks)
+
             self.index.add(np.array(embeddings, dtype=np.float32))
 
             display_name = FILENAME_TO_TITLE.get(filename, filename)
@@ -225,11 +215,9 @@ class VectorStore:
             logger.error(f"Indexing error: {str(e)}")
             raise
 
-    def search(self, query_embedding: np.ndarray, top_k: int = 200, document: Optional[str] = None) -> List[Dict]:
-
+    def search(self, query_embedding: np.ndarray, top_k: int = 45, document: Optional[str] = None) -> List[Dict]:
         query_embedding = query_embedding.reshape(1, -1).astype(np.float32)
-        print("Chunk length: ",(self.index.ntotal))
-        distances, indices = self.index.search(query_embedding, self.index.ntotal)
+        distances, indices = self.index.search(query_embedding, top_k * 2)
 
         results = []
         seen_texts = set()
@@ -239,8 +227,7 @@ class VectorStore:
                 continue
 
             chunk = self.chunk_map[idx]
-            # print("SIMILARITY SCORE:", score," threshold:", Config.SIMILARITY_THRESHOLD)
-            if chunk["text"] in seen_texts or score <= .6:
+            if chunk["text"] in seen_texts or score <= Config.SIMILARITY_THRESHOLD:
                 continue
             print("Document!!!!!!:",document)
             if document !="" and chunk["file_name"] != document:
@@ -255,7 +242,6 @@ class VectorStore:
                     "chunk": chunk["chunk_num"]
                 }
             })
-        print("SIMILARITY SCORE:", score," threshold:", Config.SIMILARITY_THRESHOLD)
 
         return sorted(results, key=lambda x: x["score"], reverse=True)[:top_k]
 
@@ -293,7 +279,6 @@ async def ask_question(request: QuestionRequest):
         start = time.time()
         question = ArabicTextProcessor.normalize_text(request.question)
         query_embedding = vector_store._generate_embedding(question)
-        print("Document name: ",request.document)
         results = vector_store.search(query_embedding, document=request.document)
 
         print("\n" + "=" * 60)
@@ -308,55 +293,106 @@ async def ask_question(request: QuestionRequest):
             )
 
         print(" المقاطع المسترجعة (Top Chunks):")
-        print("=" * 60)
-        print(f"عدد المقاطع المسترجعة: {len(results)}")
-        # print("=" * 60)
-        print("Results: ",results) 
+        for i, res in enumerate(results[:15], start=1):
+            meta = res["metadata"]
+            print(f"  {i}. [{meta['file']}] المقطع رقم {meta['chunk']} |  التشابه: {res['score']:.4f}")
+            print(f"      النص: {res['text'].strip()}...\n")
 
-        # context = "\n\n".join([
-        #     f"المقطع {res['metadata']['chunk']} من {res['metadata']['file']}:\n{res['text']}"
-        #     for res in results
-        # ])
-        context = "### مصادر الوثائق ###\n" + "\n\n".join(
-    f"[المصدر {res['metadata']['chunk']} من {res['metadata']['file']}]\n{res['text']}"
-    for res in results
-)
+        context = "\n\n".join([
+            f"المقطع {res['metadata']['chunk']} من {res['metadata']['file']}:\n{res['text']}"
+            for res in results
+        ])
+
         print("=" * 60)
         print(" السياق المُرسل إلى النموذج (Context Sent to LLM):")
+        print(context + "...\n")
+#         prompt = PromptTemplate(
+#     template="""
+#     <|START_OF_TURN_TOKEN|>
+#     <|SYSTEM_TOKEN|>
+#     أنت مساعد قانوني وأكاديمي متخصص في الوثائق الجامعية. قم بالإجابة باستخدام السياق المرفق فقط مع الالتزام الصارم بالتالي:
+    
+#     السياق:
+#     {context}
+    
+#     التعليمات:
+#     ١. استخدم لغة عربية فصحى واضحة
+#     ٢. أدرج المراجع بين [] بعد كل نقطة
+#     ٣. رتب الإجابة كقائمة مرقمة
+#     ٤. أضف قسم مصادر منفصل في النهاية
+#     ٥. لا تخترع معلومات خارج السياق
+    
+#     <|USER_TOKEN|>
+#     السؤال: {question}
+    
+#     <|ASSISTANT_TOKEN|>
+#     الإجابة:
+#     """,
+#     input_variables=["context", "question"]
+# )
+        prompt = PromptTemplate(
+        template="""
+                # الدور:
+                أنت مساعد أكاديمي ذكي ومُتخصص في تحليل الوثائق الجامعية الرسمية. تعتمد إجابتك فقط على "السياق" المرفق أدناه، ويُمنع استخدام أي معلومات خارج هذا السياق.
 
-        chat_prompt = ChatPromptTemplate.from_messages([
-            HumanMessagePromptTemplate.from_template(
-                "السياق:\n{context}\n\n"
-                "السؤال:\n{question}"
-            )
-        ])
+                ## السياق:
+                {context}
+
+                ## السؤال:
+                {question}
+
+                ## التعليمات الصارمة:
+                ١. استخدم اللغة العربية الفصحى مع علامات الترقيم المناسبة.
+                ٢. إن وجدت عدة نقاط للإجابة، نظّمها في نقاط مرقمة على النحو التالي: (١)، (٢)، (٣)...
+                ٣. بعد كل معلومة مستخرجة من السياق، ضع رقم مرجعها بين أقواس مربعة مثل: [١]
+                ٤. في نهاية الإجابة، أضف قسم "المصادر" ويتضمن:
+                - اسم كل ملف تم الاستناد إليه
+                - رقم المقطع المستخدم من ذلك الملف
+                ٥. لا تقدم أي معلومة لم يتم ذكرها في السياق المرفق.
+                ٦. إذا كان السياق غير كافٍ للإجابة:
+                - ابدأ الإجابة بجملة: "المعلومات غير كافية للإجابة على هذا السؤال بدقة."
+                - لا تخترع أو تتخيل أي إجابة.
+
+                ## تنسيق الإجابة النهائي:
+
+                الإجابة:
+                ١. ...
+                ٢. ...
+
+                المصادر:
+                [١] اسم الملف (المقطع ٣)
+                [٢] اسم الملف (المقطع ٥)
+
+                ## أمثلة مرجعية (لا تُكررها، فقط للتوضيح):
+                الإجابة:
+                ١. يجب تقديم طلب الانسحاب قبل نهاية الأسبوع الثاني من الفصل الدراسي [١]
+                ٢. يتحمل الطالب الرسوم الدراسية كاملة بعد الأسبوع الرابع [٢]
+
+                المصادر:
+                [١] دليل السلوك الجامعي (المقطع ٢)
+                [٢] الإرشادات الأكاديمية (المقطع ٥)
+
+                ## تعليمات إضافية للنموذج:
+                - لا تستخدم تنسيق Markdown مثل `**bold**` أو `# عناوين`.
+                - لا تقدم عبارات عامة أو مكررة.
+                - احرص على التسلسل المنطقي وسهولة القراءة.
+
+                ابدأ الآن بالإجابة بناءً على التعليمات أعلاه.
+                    
+                الإجابة:
+                """,
+                    input_variables=["context", "question"]
+                )
+
 
         chain = LLMChain(
             llm=services["llm"],
-            prompt=chat_prompt,
-            verbose=True,       
+            prompt=prompt,
             output_parser=StrOutputParser()
         )
-        answer = await chain.apredict(
-            context=context,    
-            question=question     
-        )
-        tokenizer = services["tokenizer"]
-        # full_prompt = prompt.format(context=context, question=question)
-        # token_count = len(tokenizer.encode(full_prompt, add_special_tokens=False))
-        token_count =2
 
-        if token_count > 14000:  # For 16k window
-                print(f"Prompt token overflow: {token_count}/16000")
+        answer = await chain.apredict(context=context, question=question)
 
-        print(f"إجمالي وحدات السياق الرمزية: {token_count} (الحد الأقصى 16000)")
-
-        context_char_count = len(context)
-        context_token_count = len(services["tokenizer"].tokenize(context))
-        logger.info(f"\nContext Size - Characters: {context_char_count}, Tokens: {context_token_count}")
-
-        print("=" * 60)
-        print(f"حجم السياق: {context_char_count} حرف، {context_token_count} وحدة رمزية")
         print("=" * 60)
         print(" الإجابة النهائية من النموذج (Final Answer):\n")
         print(answer)

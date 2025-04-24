@@ -25,17 +25,21 @@ from pypdf import PdfReader
 from io import BytesIO
 import time
 from langchain_community.chat_models import ChatOllama
-from langchain.prompts.chat import (
-  ChatPromptTemplate,
-  SystemMessagePromptTemplate,
-  HumanMessagePromptTemplate
-)
+from langchain_community.llms import HuggingFacePipeline
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+from transformers import (
+    AutoTokenizer, AutoModelForCausalLM,
+    BitsAndBytesConfig, pipeline
+)
+import torch, textwrap, os
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+HF_token    = "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"        # your PAT
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -48,8 +52,6 @@ def count_tokens(text: str) -> int:
 
 class Config:
     EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large"
-    HF_CHAT_MODEL = "CohereLabs/c4ai-command-r7b-arabic-02-2025"  # ⚠ choose any HF chat model
-
     CHUNK_SIZE = 1200
     CHUNK_OVERLAP = 100
     SIMILARITY_THRESHOLD = 0.50
@@ -80,8 +82,42 @@ def mean_pooling(model_output, attention_mask):
 def initialize_services():
     os.environ["LANGCHAIN_API_KEY"] = "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"
     os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_id = "CohereLabs/c4ai-command-r7b-arabic-02-2025"
+    bnb_cfg = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=torch.float16,
+    )
+
+    max_mem = {0: "6GiB", "cpu": "24GiB"}   # عدِّل حسب ذاكرتك الفعلية
+# Add memory mapping to model loading
+    chat_model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        quantization_config=bnb_cfg,
+        device_map="auto",
+        max_memory=max_mem,
+        torch_dtype=torch.float16,
+        use_auth_token=HF_token,          # set env HF_TOKEN or hard‑code
+        trust_remote_code=True, 
+    )
+    chat_tok = AutoTokenizer.from_pretrained(model_id, use_auth_token=HF_token)
+# Update your pipeline initialization
+    pipe = pipeline(
+        task="text-generation",
+        model=model_id,
+        tokenizer=chat_tok,
+        max_new_tokens=512,         # KV‑cache ≤ VRAM
+        temperature=0.25,
+        top_p=0.9,
+        do_sample=True,
+        batch_size=1,
+    )
+    hf_llm = HuggingFacePipeline(pipeline=pipe)
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device="cpu"
     logger.info(f"Using device: {device}")
     tokenizer = AutoTokenizer.from_pretrained(
         Config.EMBEDDING_MODEL_NAME,
@@ -96,28 +132,13 @@ def initialize_services():
     executor = ThreadPoolExecutor(max_workers=8)
 
 
-    llm = ChatOllama(
-    base_url="http://localhost:11434",
-    model="command-r7b-custom:latest",
-    streaming=True,
-    verbose=True,
-    timeout=500,
-    temperature=0.2
-    )
-    # llm = ChatGoogleGenerativeAI(
-    #     model="gemini-1.5-flash-latest",
-    #     temperature=0.35,
-    #     google_api_key=Config.GEMINI_API_KEY,
-    #     max_output_tokens=3000,
-    #     convert_system_message_to_human=True
-    # )
-
     return {
         "tokenizer": tokenizer,
         "embedding_model": model,
-        "llm": llm,
+        "llm": hf_llm,
         "executor": executor,
-        "device": device
+        "device": torch.device("cpu")
+        # "device": device
     }
 
 services = initialize_services()
@@ -192,16 +213,15 @@ class VectorStore:
 
             display_chunks = [ArabicTextProcessor.process_file(chunk.encode('utf-8')) for chunk in chunks]
             norm_chunks = [ArabicTextProcessor.normalize_text(c) for c in chunks]
-        # ---------------- count tokens for each chunk ----------------
             token_counts = [count_tokens(c) for c in norm_chunks]
             for i, tc in enumerate(token_counts):
                 print(f"{filename} | chunk {i+1}/{len(chunks)} | {tc} tokens")
                 if tc > 512:
                     logger.warning(f"  >512 tokens: will be truncated by E5!")
-            # -------------------------------------------------------------
 
             embedding_chunks = [ArabicTextProcessor.normalize_text(chunk) for chunk in chunks]
             embeddings = list(services["executor"].map(self._generate_embedding, embedding_chunks))
+            torch.cuda.empty_cache()      
             # print("display chunk !! : ",display_chunks)
             self.index.add(np.array(embeddings, dtype=np.float32))
 
@@ -225,11 +245,10 @@ class VectorStore:
             logger.error(f"Indexing error: {str(e)}")
             raise
 
-    def search(self, query_embedding: np.ndarray, top_k: int = 200, document: Optional[str] = None) -> List[Dict]:
+    def search(self, query_embedding: np.ndarray, top_k: int = 10, document: Optional[str] = None) -> List[Dict]:
 
         query_embedding = query_embedding.reshape(1, -1).astype(np.float32)
-        print("Chunk length: ",(self.index.ntotal))
-        distances, indices = self.index.search(query_embedding, self.index.ntotal)
+        distances, indices = self.index.search(query_embedding, top_k * 2)
 
         results = []
         seen_texts = set()
@@ -239,8 +258,7 @@ class VectorStore:
                 continue
 
             chunk = self.chunk_map[idx]
-            # print("SIMILARITY SCORE:", score," threshold:", Config.SIMILARITY_THRESHOLD)
-            if chunk["text"] in seen_texts or score <= .6:
+            if chunk["text"] in seen_texts or score <= Config.SIMILARITY_THRESHOLD:
                 continue
             print("Document!!!!!!:",document)
             if document !="" and chunk["file_name"] != document:
@@ -255,7 +273,6 @@ class VectorStore:
                     "chunk": chunk["chunk_num"]
                 }
             })
-        print("SIMILARITY SCORE:", score," threshold:", Config.SIMILARITY_THRESHOLD)
 
         return sorted(results, key=lambda x: x["score"], reverse=True)[:top_k]
 
@@ -286,6 +303,18 @@ vector_store = VectorStore()
 class QuestionRequest(BaseModel):
     question: str
     document: Optional[str]
+# Add to imports
+import gc, pynvml
+pynvml.nvmlInit()
+handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+
+def clear_gpu():
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+    gc.collect()
+
+    info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    print(f"GPU free after cleanup: {info.free/1024**2:.1f} MB")
 
 @app.post("/ask")
 async def ask_question(request: QuestionRequest):
@@ -293,7 +322,6 @@ async def ask_question(request: QuestionRequest):
         start = time.time()
         question = ArabicTextProcessor.normalize_text(request.question)
         query_embedding = vector_store._generate_embedding(question)
-        print("Document name: ",request.document)
         results = vector_store.search(query_embedding, document=request.document)
 
         print("\n" + "=" * 60)
@@ -311,72 +339,126 @@ async def ask_question(request: QuestionRequest):
         print("=" * 60)
         print(f"عدد المقاطع المسترجعة: {len(results)}")
         # print("=" * 60)
-        print("Results: ",results) 
+        # print("Results: ",results) 
+        # for i, res in enumerate(results[:15], start=1):
+        #     meta = res["metadata"]
+        #     print(f"  {i}. [{meta['file']}] المقطع رقم {meta['chunk']} |  التشابه: {res['score']:.4f}")
+        #     print(f"      النص: {res['text'].strip()}...\n")
 
-        # context = "\n\n".join([
-        #     f"المقطع {res['metadata']['chunk']} من {res['metadata']['file']}:\n{res['text']}"
-        #     for res in results
-        # ])
-        context = "### مصادر الوثائق ###\n" + "\n\n".join(
-    f"[المصدر {res['metadata']['chunk']} من {res['metadata']['file']}]\n{res['text']}"
-    for res in results
-)
+        context = "\n\n".join([
+            f"المقطع {res['metadata']['chunk']} من {res['metadata']['file']}:\n{res['text']}"
+            for res in results
+        ])
         print("=" * 60)
         print(" السياق المُرسل إلى النموذج (Context Sent to LLM):")
+        print(context + "...\n")
+#         prompt = PromptTemplate(
+#     template="""
+#     <|START_OF_TURN_TOKEN|>
+#     <|SYSTEM_TOKEN|>
+#     أنت مساعد قانوني وأكاديمي متخصص في الوثائق الجامعية. قم بالإجابة باستخدام السياق المرفق فقط مع الالتزام الصارم بالتالي:
+    
+#     السياق:
+#     {context}
+    
+#     التعليمات:
+#     ١. استخدم لغة عربية فصحى واضحة
+#     ٢. أدرج المراجع بين [] بعد كل نقطة
+#     ٣. رتب الإجابة كقائمة مرقمة
+#     ٤. أضف قسم مصادر منفصل في النهاية
+#     ٥. لا تخترع معلومات خارج السياق
+    
+#     <|USER_TOKEN|>
+#     السؤال: {question}
+    
+#     <|ASSISTANT_TOKEN|>
+#     الإجابة:
+#     """,
+#     input_variables=["context", "question"]
+# )
+    #     prompt = PromptTemplate(
+    #     template="""
+    #     **المهمة**: أنت خبير في الأنظمة الجامعية السعودية. قم ب:
+    #     1. تحليل السؤال بدقة
+    #     2. استخراج المعلومات من السياق فقط
+    #     3. تنظيم الإجابة كالتالي:
+        
+    #     **الهيكل المطلوب**:
+    #     [مقدمة موجزة]
+        
+    #     (١) النقطة الأولى [المصدر]
+    #     (٢) النقطة الثانية [المصدر]
+        
+    #     **ملاحظات هامة**:
+    #     - عدم استخدام العبارات العامة
+    #     - الربط المنطقي بين النقاط
+    #     - تحديد نوع التشريع (نظامي/إجرائي/توجيهي)
+        
+    #     **السياق**:
+    #     {context}
+        
+    #     **السؤال**:
+    #     {question}
+        
+    #     **الإجابة**:
+    #     """,
+    #     input_variables=["context", "question"]
+    # )
 
-        chat_prompt = ChatPromptTemplate.from_messages([
-            HumanMessagePromptTemplate.from_template(
-                "السياق:\n{context}\n\n"
-                "السؤال:\n{question}"
-            )
-        ])
-
-        chain = LLMChain(
-            llm=services["llm"],
-            prompt=chat_prompt,
-            verbose=True,       
-            output_parser=StrOutputParser()
-        )
-        answer = await chain.apredict(
-            context=context,    
-            question=question     
-        )
         tokenizer = services["tokenizer"]
-        # full_prompt = prompt.format(context=context, question=question)
-        # token_count = len(tokenizer.encode(full_prompt, add_special_tokens=False))
-        token_count =2
+        full_prompt = prompt.format(context=context, question=question)
+        token_count = len(tokenizer.encode(full_prompt, add_special_tokens=False))
 
+        # 2. Add warning system
         if token_count > 14000:  # For 16k window
                 print(f"Prompt token overflow: {token_count}/16000")
 
+        # 3. Add to your existing print block
         print(f"إجمالي وحدات السياق الرمزية: {token_count} (الحد الأقصى 16000)")
-
+        chain = LLMChain(
+            llm=services["llm"],
+            prompt=prompt,
+            output_parser=StrOutputParser()
+        )
+        # Add this right after the context is created
         context_char_count = len(context)
         context_token_count = len(services["tokenizer"].tokenize(context))
         logger.info(f"\nContext Size - Characters: {context_char_count}, Tokens: {context_token_count}")
 
+        # Add to the existing print block
         print("=" * 60)
+        print(" السياق المُرسل إلى النموذج (Context Sent to LLM):")
         print(f"حجم السياق: {context_char_count} حرف، {context_token_count} وحدة رمزية")
         print("=" * 60)
+# In your ask_question endpoint, wrap generation in try/finally
+        try:
+            answer = await chain.apredict(context=context, question=question)
+            payload = {
+        "answer":  answer,
+        "context": context,                   # still alive here
+        "sources": [
+            {"file": r["metadata"]["file"], "chunk": r["metadata"]["chunk"]}
+            for r in results
+        ],
+    }
+        finally:
+            # Add memory cleanup
+            del context, question, results, query_embedding
+            clear_gpu()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        print("=" * 60)
         print(" الإجابة النهائية من النموذج (Final Answer):\n")
-        print(answer)
+        print(payload)
         print("=" * 60)
         print(f" مدة المعالجة: {time.time() - start:.2f} ثانية")
         print("=" * 60 + "\n")
 
-        return JSONResponse(
-            content={
-                "answer": answer,
-                                "context": context,  
-                "sources": [
-                    {"file": res["metadata"]["file"], "chunk": res["metadata"]["chunk"]} 
-                    for res in results
-                ]
-            },
-        )
     except Exception as e:
         logger.error(f"Q&A failed: {str(e)}")
         raise HTTPException(500, "Question processing failed")
+    return JSONResponse(content=payload)
+    
 
 
 @app.get("/documents")
