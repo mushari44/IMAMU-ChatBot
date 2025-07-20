@@ -24,9 +24,13 @@ import torch.nn.functional as F
 from pypdf import PdfReader
 from io import BytesIO
 import time
-
 from langdetect import detect
 from transformers import AutoTokenizer as NLLBTokenizer, AutoModelForSeq2SeqLM
+###---
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  
 
 # from langchain_community.chat_models import ChatOllama
 from langchain.prompts.chat import (
@@ -64,17 +68,21 @@ class Config:
     # HF_CHAT_MODEL = "CohereLabs/c4ai-command-r7b-arabic-02-2025"  # ⚠ choose any HF chat model
     nllb_tokenizer = NLLBTokenizer.from_pretrained("facebook/nllb-200-3.3B")
     llb_model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-3.3B")
+    '''
+    LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+    '''
     CHUNK_SIZE = 512
     CHUNK_OVERLAP = 100
     SIMILARITY_THRESHOLD = 0.50
-    LANGSMITH_API_KEY: str = "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"
+    LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
     os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     VECTOR_DIR = os.path.join(BASE_DIR, "data", "Victoredb")
     INDEX_PATH = os.path.join(VECTOR_DIR, "faiss_index.bin")
     CHUNK_MAP_PATH = os.path.join(VECTOR_DIR, "chunk_map.pkl")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCjQakHsM7ypOrtYOBmHd6dZ-4MB8iXzUk") 
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 #     LANG_CODE_MAP = {
 #     "en": "eng_Latn",
 #     "fr": "fra_Latn",
