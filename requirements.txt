@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+torch
+numpy
+faiss-cpu
+transformers
+langchain
+langchain-google-genai
+langdetect
+arabic-reshaper
+python-bidi
+pypdf
+python-dotenv
